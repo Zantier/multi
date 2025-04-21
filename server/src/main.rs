@@ -1,36 +1,98 @@
 use futures_util::StreamExt;
-use tokio::net::TcpListener;
+use serde_json;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::accept_async;
-use tungstenite::protocol::Message;
+
+mod messages;
+use messages::ClientMessage;
+mod room;
+use room::Client;
+
+#[derive(Debug)]
+struct ServerState {
+    clients: HashMap<usize, Client>,
+    next_client_id: usize,
+    // rooms: HashMap<usize, Room> // to be implemented
+}
 
 #[tokio::main]
 async fn main() {
     let addr = "127.0.0.1:8088";
     let listener = TcpListener::bind(&addr).await.expect("Failed to bind");
-
     println!("Listening on {}", addr);
 
+    let state = Arc::new(Mutex::new(ServerState {
+        clients: HashMap::new(),
+        next_client_id: 0,
+    }));
+
     while let Ok((stream, _)) = listener.accept().await {
-        tokio::spawn(handle_connection(stream));
+        let state = state.clone();
+        tokio::spawn(handle_connection(state, stream));
     }
 }
 
-async fn handle_connection(stream: tokio::net::TcpStream) {
+async fn handle_connection(state: Arc<Mutex<ServerState>>, stream: TcpStream) {
     let ws_stream = accept_async(stream).await.expect("Error during the websocket handshake");
     let (_write, mut read) = ws_stream.split();
 
     println!("New WebSocket connection");
 
-    while let Some(msg) = read.next().await {
-        match msg {
-            Ok(Message::Text(text)) => {
-                println!("Received message: {}", text);
+    while let Some(raw_result) = read.next().await {
+        match raw_result {
+            Ok(raw_message) => {
+                if let Ok(raw_message) = raw_message.to_text() {
+                    match serde_json::from_str::<ClientMessage>(raw_message) {
+                        Ok(message) => {
+                            handle_message(&state, message)
+                        }
+                        Err(_) => {
+                            eprintln!("Received invalid JSON: {}", raw_message);
+                        }
+                    }
+                }
             }
-            Ok(Message::Close(_)) => {
-                println!("Connection closed");
+            Err(e) => {
+                eprintln!("WebSocket error: {}", e);
                 break;
             }
-            _ => {}
+        }
+    }
+
+    println!("Client disconnected");
+}
+
+fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage) {
+    state.lock();
+
+    match message {
+        ClientMessage::ViewRoom { id } => {
+            println!("Client wants to view room {}", id);
+            // TODO: add logic
+        }
+        ClientMessage::JoinRoom { name } => {
+            println!("Client joins with name: {}", name);
+            // TODO: add logic
+        }
+        ClientMessage::LeaveRoom {} => {
+            println!("Client left the room");
+            // TODO: add logic
+        }
+        ClientMessage::PickCards { cards } => {
+            println!("Client picked cards: {:?}", cards);
+            // TODO: add logic
+        }
+        ClientMessage::StartGame {} => {
+            println!("Game start requested");
+            // TODO: add logic
+        }
+        ClientMessage::Heartbeat {} => {
+            // Used to keep the connection alive
+        }
+        ClientMessage::Unknown => {
+            println!("Unknown message received");
         }
     }
 }
