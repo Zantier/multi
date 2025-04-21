@@ -17,6 +17,7 @@
           packages = [
             pkgs.cargo
             pkgs.clippy
+            pkgs.pnpm
             pkgs.rust-analyzer
             pkgs.rustc
           ];

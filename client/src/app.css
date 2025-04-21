@@ -1,0 +1,28 @@
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  background-color: #202020;
+  color: #a0a0a0;
+}
+
+body {
+  margin: 0;
+}
+
+button {
+  padding: 0.3125rem;
+  background-color: #404040;
+  font-size: inherit;
+  color: inherit;
+}
+button:disabled {
+  color: #606060;
+}
+
+input, select {
+  color: inherit;
+  background-color: #303030;
+  font-size: 1.5rem;
+}
+input {
+  font-family: 'Courier New', Courier, monospace;
+}
