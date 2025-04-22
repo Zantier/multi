@@ -1,32 +1,39 @@
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
+use futures_util::stream::SplitSink;
 use serde_json;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::{Duration, sleep};
 use tokio_tungstenite::accept_async;
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Message;
 
+mod card;
 mod messages;
-use messages::ClientMessage;
+use messages::{ClientMessage, PlayerUpdate, ServerMessage};
 mod room;
-use room::Client;
-
-#[derive(Debug)]
-struct ServerState {
-    clients: HashMap<usize, Client>,
-    next_client_id: usize,
-    // rooms: HashMap<usize, Room> // to be implemented
-}
+use room::{Client, Room};
+mod server_state;
+use server_state::ServerState;
+mod util;
 
 #[tokio::main]
 async fn main() {
     let addr = "127.0.0.1:8088";
     let listener = TcpListener::bind(&addr).await.expect("Failed to bind");
-    println!("Listening on {}", addr);
+    println!("Listening on {addr}");
 
     let state = Arc::new(Mutex::new(ServerState {
         clients: HashMap::new(),
         next_client_id: 0,
+        rooms: HashMap::new(),
     }));
+
+    {
+        let state = state.clone();
+        tokio::spawn(tick(state));
+    }
 
     while let Ok((stream, _)) = listener.accept().await {
         let state = state.clone();
@@ -34,65 +41,214 @@ async fn main() {
     }
 }
 
+fn send_packet(sender: &mut SplitSink<WebSocketStream<TcpStream>, Message>, data: &ServerMessage) {
+    let text = serde_json::to_string(data).unwrap();
+    sender.send(Message::Text(text.into()));
+}
+
+fn check_delete_room<'a>(state: &'a mut ServerState, room_id: &str) -> Option<&'a Room> {
+    let now = util::get_now();
+    let room = &state.rooms[room_id];
+
+    if let Some(delete_time) = room.delete_time {
+        if now < delete_time {
+            return None;
+        }
+
+        let room_id = room.id.clone();
+        if room.viewers.len() == 0 {
+            state.rooms.remove(&room_id);
+            return None;
+        } else {
+            let mut new_room = Room::new(room_id.clone());
+            for &viewer in room.viewers.iter() {
+                new_room.viewers.push(viewer);
+            }
+            state.rooms.insert(room_id.clone(), new_room);
+            return state.rooms.get(&room_id);
+        }
+    }
+
+    None
+}
+
+fn send_update_players(clients: &mut HashMap<u32, Client>, room: &Room, send_to_players: bool, send_to_viewers: bool) {
+    let packet = ServerMessage::UpdatePlayers {
+        players: get_update_players(&room),
+        started: room.started,
+    };
+    if send_to_players {
+        for player in room.players.iter() {
+            if let Some(client_id) = player.client_id {
+                let client = clients.get_mut(&client_id);
+                if let Some(client) = client {
+                    send_packet(&mut client.sender, &packet);
+                }
+            }
+        }
+    }
+    if send_to_viewers {
+        for client_id in room.viewers.iter() {
+            let client = clients.get_mut(&client_id);
+            if let Some(client) = client {
+                send_packet(&mut client.sender, &packet);
+            }
+        }
+    }
+}
+
+fn get_update_players(room: &Room) -> Vec<PlayerUpdate> {
+    let mut players = Vec::new();
+    let now = util::get_now();
+    for player in room.players.iter() {
+        players.push(PlayerUpdate {
+            name: player.name.clone(),
+            score: player.score,
+            minus_score: player.minus_score,
+            connected: player.client_id.is_some(),
+            timeout: player.timeout - now,
+        });
+    }
+
+    players
+}
+
+
+async fn tick(state: Arc<Mutex<ServerState>>) {
+    loop {
+        {
+            let mut state = state.lock().unwrap();
+            let now = util::get_now();
+            let room_ids = state.rooms.keys().cloned().collect::<Vec<_>>();
+            for room_id in room_ids {
+                // TODO: See if the room needs deleting
+                //let new_room = check_delete_room(&mut state, room_id);
+                //if let Some(new_room) = new_room {
+                //    send_update_players(&mut state.clients, &mut new_room, true, true);
+                //    continue;
+                //}
+
+                let room = state.rooms.get_mut(&room_id).unwrap();
+                let mut updated = false;
+                let mut i = 0;
+                while i < room.wrong.len() {
+                    if now > room.wrong[i].expire {
+                        room.wrong.remove(i);
+                        updated = true;
+                    } else {
+                        i += 1;
+                    }
+                }
+
+                let mut i = 0;
+                while i < room.correct.len() {
+                    if now > room.correct[i].expire {
+                        for &card_index in &room.correct[i].cards {
+                            room.cards[card_index as usize] = None;
+                        }
+                        room.correct.remove(i);
+                        updated = true;
+                    } else {
+                        i += 1;
+                    }
+                }
+
+                room.add_cards();
+                if updated {
+                    // TODO: send update
+                    //send_update_game_all(room);
+                }
+            }
+        }
+
+        sleep(Duration::from_millis(100)).await;
+    }
+}
+
 async fn handle_connection(state: Arc<Mutex<ServerState>>, stream: TcpStream) {
     let ws_stream = accept_async(stream).await.expect("Error during the websocket handshake");
-    let (_write, mut read) = ws_stream.split();
+    let (mut write, mut read) = ws_stream.split();
 
     println!("New WebSocket connection");
+
+    let client_id = {
+        let mut state = state.lock().unwrap();
+        let client = Client {
+            id: state.next_client_id,
+            room_id: None,
+            name: None,
+            sender: write,
+        };
+        state.clients.insert(client.id, client);
+        state.next_client_id += 1;
+        state.next_client_id - 1
+    };
 
     while let Some(raw_result) = read.next().await {
         match raw_result {
             Ok(raw_message) => {
                 if let Ok(raw_message) = raw_message.to_text() {
+                    if raw_message == "" {
+                        println!("Empty message");
+                        break;
+                    }
+
                     match serde_json::from_str::<ClientMessage>(raw_message) {
                         Ok(message) => {
-                            handle_message(&state, message)
+                            handle_message(&state, message, client_id)
                         }
-                        Err(_) => {
-                            eprintln!("Received invalid JSON: {}", raw_message);
+                        Err(e) => {
+                            eprintln!("Error {e}");
+                            eprintln!("Received invalid JSON: {raw_message}");
                         }
                     }
                 }
             }
             Err(e) => {
-                eprintln!("WebSocket error: {}", e);
+                eprintln!("WebSocket error: {e}");
                 break;
             }
         }
     }
 
     println!("Client disconnected");
+    let mut client = {
+        let mut state = state.lock().unwrap();
+        state.clients.remove(&client_id).unwrap()
+    };
+    _ = client.sender.close().await;
 }
 
-fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage) {
-    state.lock();
+fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage, client_id: u32) {
+    let mut state = state.lock().unwrap();
 
     match message {
         ClientMessage::ViewRoom { id } => {
-            println!("Client wants to view room {}", id);
+            println!("[{client_id}] ViewRoom {id}");
+            state.view_room(client_id, &id);
             // TODO: add logic
         }
         ClientMessage::JoinRoom { name } => {
-            println!("Client joins with name: {}", name);
+            println!("[{client_id}] JoinRoom {name}");
             // TODO: add logic
         }
         ClientMessage::LeaveRoom {} => {
-            println!("Client left the room");
+            println!("[{client_id}] Client left the room");
             // TODO: add logic
         }
         ClientMessage::PickCards { cards } => {
-            println!("Client picked cards: {:?}", cards);
+            println!("[{client_id}] Client picked cards: {cards:?}");
             // TODO: add logic
         }
         ClientMessage::StartGame {} => {
-            println!("Game start requested");
+            println!("[{client_id}] Game start requested");
             // TODO: add logic
         }
         ClientMessage::Heartbeat {} => {
             // Used to keep the connection alive
         }
         ClientMessage::Unknown => {
-            println!("Unknown message received");
+            println!("[{client_id}] Unknown message received");
         }
     }
 }
