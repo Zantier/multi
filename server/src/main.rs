@@ -41,11 +41,6 @@ async fn main() {
     }
 }
 
-fn send_packet(sender: &mut SplitSink<WebSocketStream<TcpStream>, Message>, data: &ServerMessage) {
-    let text = serde_json::to_string(data).unwrap();
-    sender.send(Message::Text(text.into()));
-}
-
 fn check_delete_room<'a>(state: &'a mut ServerState, room_id: &str) -> Option<&'a Room> {
     let now = util::get_now();
     let room = &state.rooms[room_id];
@@ -71,48 +66,6 @@ fn check_delete_room<'a>(state: &'a mut ServerState, room_id: &str) -> Option<&'
 
     None
 }
-
-fn send_update_players(clients: &mut HashMap<u32, Client>, room: &Room, send_to_players: bool, send_to_viewers: bool) {
-    let packet = ServerMessage::UpdatePlayers {
-        players: get_update_players(&room),
-        started: room.started,
-    };
-    if send_to_players {
-        for player in room.players.iter() {
-            if let Some(client_id) = player.client_id {
-                let client = clients.get_mut(&client_id);
-                if let Some(client) = client {
-                    send_packet(&mut client.sender, &packet);
-                }
-            }
-        }
-    }
-    if send_to_viewers {
-        for client_id in room.viewers.iter() {
-            let client = clients.get_mut(&client_id);
-            if let Some(client) = client {
-                send_packet(&mut client.sender, &packet);
-            }
-        }
-    }
-}
-
-fn get_update_players(room: &Room) -> Vec<PlayerUpdate> {
-    let mut players = Vec::new();
-    let now = util::get_now();
-    for player in room.players.iter() {
-        players.push(PlayerUpdate {
-            name: player.name.clone(),
-            score: player.score,
-            minus_score: player.minus_score,
-            connected: player.client_id.is_some(),
-            timeout: player.timeout - now,
-        });
-    }
-
-    players
-}
-
 
 async fn tick(state: Arc<Mutex<ServerState>>) {
     loop {
@@ -230,6 +183,7 @@ fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage, clien
         }
         ClientMessage::JoinRoom { name } => {
             println!("[{client_id}] JoinRoom {name}");
+            state.join_room(client_id, name);
             // TODO: add logic
         }
         ClientMessage::LeaveRoom {} => {

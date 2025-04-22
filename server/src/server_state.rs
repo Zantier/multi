@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::messages::ServerMessage;
-use crate::room::{Client, Room};
+use crate::room::{Client, Player, Room};
 
 #[derive(Debug)]
 pub struct ServerState {
@@ -32,6 +32,66 @@ impl ServerState {
         self.send_packet(client_id, packet);
     }
 
-    fn join_room(&self, client_id: u32, client_name: String) {
+    pub fn join_room(&mut self, client_id: u32, client_name: String) {
+        let client = self.clients.get_mut(&client_id).unwrap();
+        let room = self.rooms.get_mut(client.room_id.as_ref().unwrap()).unwrap();
+        let mut success = false;
+        if room.started {
+            for player in room.players.iter_mut() {
+                if player.client_id.is_none() && Some(&player.name) == client.name.as_ref() {
+                    player.client_id = Some(client.id);
+                    success = true;
+                }
+            }
+        } else {
+            success = true;
+            for player in room.players.iter() {
+                if Some(&player.name) == client.name.as_ref() {
+                    success = false;
+                }
+            }
+
+            if success {
+                room.viewers = room.viewers
+                    .iter()
+                    .map(|&x| x)
+                    .filter(|&id| id != client.id)
+                    .collect();
+                room.add_player(Player { client_id: Some(client.id), name: client.name.clone().unwrap(), score: 0, minus_score: 0, timeout: 0 });
+            }
+        }
+
+        if success {
+            client.room_id = Some(room.id.to_string());
+            if room.started {
+                let player_index = room.get_player_index(client.id);
+                let packet = room.get_update_game_packet(player_index);
+                self.send_packet(client_id, packet);
+            }
+
+            self.send_update_players(&room, true, true);
+        } else {
+            self.send_packet(client_id, ServerMessage::RejectJoinGame {});
+        }
     }
+
+    pub fn send_update_players(&mut self, room: &Room, send_to_players: bool, send_to_viewers: bool) {
+        let packet = ServerMessage::UpdatePlayers {
+            players: room.get_player_updates(),
+            started: room.started,
+        };
+        if send_to_players {
+            for player in room.players.iter() {
+                if let Some(client_id) = player.client_id {
+                    self.send_packet(client_id, packet.clone());
+                }
+            }
+        }
+        if send_to_viewers {
+            for &client_id in room.viewers.iter() {
+                self.send_packet(client_id, packet.clone());
+            }
+        }
+    }
+
 }

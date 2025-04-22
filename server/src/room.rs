@@ -7,7 +7,7 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::card::{get_third_card, id_to_card, Card};
-use crate::messages::PlayerUpdate;
+use crate::messages::{PickCards, PlayerUpdate, ServerMessage};
 use crate::util;
 
 #[derive(Debug)]
@@ -25,13 +25,6 @@ pub struct Player {
     pub score: i32,
     pub minus_score: i32,
     pub timeout: i32,
-}
-
-#[derive(Debug)]
-pub struct PickCards {
-    pub player: i32,
-    pub cards: Vec<i32>,
-    pub expire: i32,
 }
 
 #[derive(Debug)]
@@ -54,6 +47,37 @@ pub struct Room {
 }
 
 impl Room {
+    pub fn new(id: String) -> Room {
+        Room {
+            id,
+            viewers: Vec::new(),
+            players: Vec::new(),
+            started: false,
+            start_time: 0,
+            cards_left: Vec::new(),
+            cards: Vec::new(),
+            correct: Vec::new(),
+            wrong: Vec::new(),
+            game_over: false,
+            delete_time: None,
+        }
+    }
+
+    pub fn get_player_index(&self, client_id: u32) -> Option<u32> {
+        for i in 0..self.players.len() {
+            if self.players[i].client_id == Some(client_id) {
+                return Some(i as u32);
+            }
+        }
+
+        return None;
+    }
+
+    pub fn add_player(&mut self, player: Player) {
+        self.players.push(player);
+        self.delete_time = None;
+    }
+
     pub fn get_player_updates(&self) -> Vec<PlayerUpdate> {
         let mut players = Vec::new();
         let now = util::get_now();
@@ -163,22 +187,21 @@ impl Room {
 
         return result;
     }
-}
 
-impl Room {
-    pub fn new(id: String) -> Room {
-        Room {
-            id,
-            viewers: Vec::new(),
-            players: Vec::new(),
-            started: false,
-            start_time: 0,
-            cards_left: Vec::new(),
-            cards: Vec::new(),
-            correct: Vec::new(),
-            wrong: Vec::new(),
-            game_over: false,
-            delete_time: None,
+    pub fn get_update_game_packet(&self, player_index: Option<u32>) -> ServerMessage {
+        let packet = ServerMessage::UpdateGame {
+            players: self.get_player_updates(),
+            cards: self.cards.iter().map(|card| card.as_ref().map(|card| card.id)).collect(),
+            wrong: self.wrong.to_vec(),
+            correct: self.correct.to_vec(),
+            game_over: self.game_over,
+            start_time: self.start_time - util::get_now(),
+        };
+
+        if let Some(player_index) = player_index {
+            // Add playerState
         }
+
+        packet
     }
 }
