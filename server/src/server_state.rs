@@ -34,6 +34,7 @@ impl ServerState {
 
     pub fn join_room(&mut self, client_id: u32, client_name: String) {
         let client = self.clients.get_mut(&client_id).unwrap();
+        client.name = Some(client_name);
         let room = self.rooms.get_mut(client.room_id.as_ref().unwrap()).unwrap();
         let mut success = false;
         if room.started {
