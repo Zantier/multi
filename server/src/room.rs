@@ -18,7 +18,7 @@ pub struct Client {
     pub sender: SplitSink<WebSocketStream<TcpStream>, Message>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Player {
     pub client_id: Option<u32>,
     pub name: String,

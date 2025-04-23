@@ -69,26 +69,30 @@ impl ServerState {
                 self.send_packet(client_id, packet);
             }
 
-            self.send_update_players(&room, true, true);
+            let client = self.clients.get_mut(&client_id).unwrap();
+            let room_id = client.room_id.clone().unwrap();
+            self.send_update_players(&room_id, true, true);
         } else {
             self.send_packet(client_id, ServerMessage::RejectJoinGame {});
         }
     }
 
-    pub fn send_update_players(&mut self, room: &Room, send_to_players: bool, send_to_viewers: bool) {
+    pub fn send_update_players(&mut self, room_id: &str, send_to_players: bool, send_to_viewers: bool) {
+        let room = &self.rooms[room_id];
         let packet = ServerMessage::UpdatePlayers {
             players: room.get_player_updates(),
             started: room.started,
         };
         if send_to_players {
-            for player in room.players.iter() {
+            for player in room.players.to_vec() {
                 if let Some(client_id) = player.client_id {
                     self.send_packet(client_id, packet.clone());
                 }
             }
         }
         if send_to_viewers {
-            for &client_id in room.viewers.iter() {
+            let room = &self.rooms[room_id];
+            for client_id in room.viewers.to_vec() {
                 self.send_packet(client_id, packet.clone());
             }
         }
