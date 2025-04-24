@@ -1,4 +1,4 @@
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use std::collections::HashMap;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -13,13 +13,13 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    pub fn send_packet(&mut self, client_id: u32, data: ServerMessage) {
+    pub async fn send_packet(&mut self, client_id: u32, data: ServerMessage) {
         let text = serde_json::to_string(&data).unwrap();
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.sender.send(Message::Text(text.into()));
+        _ = client.sender.send(Message::Text(text.into())).await;
     }
 
-    pub fn view_room(&mut self, client_id: u32, room_id: &str) {
+    pub async fn view_room(&mut self, client_id: u32, room_id: &str) {
         if !self.rooms.contains_key(room_id) {
             self.rooms.insert(room_id.to_string(), Room::new(room_id.to_string()));
         }
@@ -29,10 +29,10 @@ impl ServerState {
         self.clients.get_mut(&client_id).unwrap().room_id = Some(room.id.clone());
 
         let packet = ServerMessage::UpdatePlayers { players: room.get_player_updates(), started: room.started };
-        self.send_packet(client_id, packet);
+        self.send_packet(client_id, packet).await;
     }
 
-    pub fn join_room(&mut self, client_id: u32, client_name: String) {
+    pub async fn join_room(&mut self, client_id: u32, client_name: String) {
         let client = self.clients.get_mut(&client_id).unwrap();
         client.name = Some(client_name);
         let room = self.rooms.get_mut(client.room_id.as_ref().unwrap()).unwrap();
@@ -67,18 +67,18 @@ impl ServerState {
             if room.started {
                 let player_index = room.get_player_index(client.id);
                 let packet = room.get_update_game_packet(player_index);
-                self.send_packet(client_id, packet);
+                self.send_packet(client_id, packet).await;
             }
 
             let client = self.clients.get_mut(&client_id).unwrap();
             let room_id = client.room_id.clone().unwrap();
-            self.send_update_players(&room_id, true, true);
+            self.send_update_players(&room_id, true, true).await;
         } else {
-            self.send_packet(client_id, ServerMessage::RejectJoinGame {});
+            self.send_packet(client_id, ServerMessage::RejectJoinGame {}).await;
         }
     }
 
-    pub fn send_update_players(&mut self, room_id: &str, send_to_players: bool, send_to_viewers: bool) {
+    pub async fn send_update_players(&mut self, room_id: &str, send_to_players: bool, send_to_viewers: bool) {
         let room = &self.rooms[room_id];
         let packet = ServerMessage::UpdatePlayers {
             players: room.get_player_updates(),
@@ -87,14 +87,14 @@ impl ServerState {
         if send_to_players {
             for player in room.players.to_vec() {
                 if let Some(client_id) = player.client_id {
-                    self.send_packet(client_id, packet.clone());
+                    self.send_packet(client_id, packet.clone()).await;
                 }
             }
         }
         if send_to_viewers {
             let room = &self.rooms[room_id];
             for client_id in room.viewers.to_vec() {
-                self.send_packet(client_id, packet.clone());
+                self.send_packet(client_id, packet.clone()).await;
             }
         }
     }

@@ -1,17 +1,14 @@
 use futures_util::{SinkExt, StreamExt};
-use futures_util::stream::SplitSink;
 use serde_json;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{Duration, sleep};
 use tokio_tungstenite::accept_async;
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::Message;
 
 mod card;
 mod messages;
-use messages::{ClientMessage, PlayerUpdate, ServerMessage};
+use messages::ClientMessage;
 mod room;
 use room::{Client, Room};
 mod server_state;
@@ -120,7 +117,7 @@ async fn tick(state: Arc<Mutex<ServerState>>) {
 
 async fn handle_connection(state: Arc<Mutex<ServerState>>, stream: TcpStream) {
     let ws_stream = accept_async(stream).await.expect("Error during the websocket handshake");
-    let (mut write, mut read) = ws_stream.split();
+    let (write, mut read) = ws_stream.split();
 
     println!("New WebSocket connection");
 
@@ -148,7 +145,7 @@ async fn handle_connection(state: Arc<Mutex<ServerState>>, stream: TcpStream) {
 
                     match serde_json::from_str::<ClientMessage>(raw_message) {
                         Ok(message) => {
-                            handle_message(&state, message, client_id)
+                            handle_message(&state, message, client_id).await;
                         }
                         Err(e) => {
                             eprintln!("Error {e}");
@@ -172,19 +169,17 @@ async fn handle_connection(state: Arc<Mutex<ServerState>>, stream: TcpStream) {
     _ = client.sender.close().await;
 }
 
-fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage, client_id: u32) {
+async fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage, client_id: u32) {
     let mut state = state.lock().unwrap();
 
     match message {
         ClientMessage::ViewRoom { id } => {
             println!("[{client_id}] ViewRoom {id}");
-            state.view_room(client_id, &id);
-            // TODO: add logic
+            state.view_room(client_id, &id).await;
         }
         ClientMessage::JoinRoom { name } => {
             println!("[{client_id}] JoinRoom {name}");
-            state.join_room(client_id, name);
-            // TODO: add logic
+            state.join_room(client_id, name).await;
         }
         ClientMessage::LeaveRoom {} => {
             println!("[{client_id}] Client left the room");
