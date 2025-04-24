@@ -1,8 +1,9 @@
 use futures_util::{SinkExt, StreamExt};
 use serde_json;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
 use tokio_tungstenite::accept_async;
 
@@ -67,7 +68,7 @@ fn check_delete_room<'a>(state: &'a mut ServerState, room_id: &str) -> Option<&'
 async fn tick(state: Arc<Mutex<ServerState>>) {
     loop {
         {
-            let mut state = state.lock().unwrap();
+            let mut state = state.lock().await;
             let now = util::get_now();
             let room_ids = state.rooms.keys().cloned().collect::<Vec<_>>();
             for room_id in room_ids {
@@ -122,7 +123,7 @@ async fn handle_connection(state: Arc<Mutex<ServerState>>, stream: TcpStream) {
     println!("New WebSocket connection");
 
     let client_id = {
-        let mut state = state.lock().unwrap();
+        let mut state = state.lock().await;
         let client = Client {
             id: state.next_client_id,
             room_id: None,
@@ -163,14 +164,14 @@ async fn handle_connection(state: Arc<Mutex<ServerState>>, stream: TcpStream) {
 
     println!("Client disconnected");
     let mut client = {
-        let mut state = state.lock().unwrap();
+        let mut state = state.lock().await;
         state.clients.remove(&client_id).unwrap()
     };
     _ = client.sender.close().await;
 }
 
 async fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage, client_id: u32) {
-    let mut state = state.lock().unwrap();
+    let mut state = state.lock().await;
 
     match message {
         ClientMessage::ViewRoom { id } => {

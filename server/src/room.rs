@@ -198,7 +198,7 @@ impl Room {
             start_time: self.start_time - util::get_now(),
         };
 
-        if let Some(player_index) = player_index {
+        if let Some(_player_index) = player_index {
             // Add playerState
         }
 
