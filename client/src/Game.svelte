@@ -187,28 +187,30 @@
   {/if}
 </div>
 <table>
-  <tr>
-    <td>Name</td>
-    <td>Score</td>
-    <td>Timeout</td>
-    <td>Connected</td>
-  </tr>
-  {#each players as player, playerIndex}
+  <tbody>
     <tr>
-      <td
-        class:correct={roomData.correct.some(x => x.player === playerIndex)}
-        class:wrong={roomData.wrong.some(x => x.player === playerIndex)}
-        >{player.name}</td>
-      <td>
-        {player.score}
-        {#if player.minusScore > 0}
-          (-{player.minusScore})
-        {/if}
-      </td>
-      <td>{getTimeoutString(player.timeout)}</td>
-      <td>{player.connected}</td>
+      <td>Name</td>
+      <td>Score</td>
+      <td>Timeout</td>
+      <td>Connected</td>
     </tr>
-  {/each}
+    {#each players as player, playerIndex}
+      <tr>
+        <td
+          class:correct={roomData.correct.some(x => x.player === playerIndex)}
+          class:wrong={roomData.wrong.some(x => x.player === playerIndex)}
+          >{player.name}</td>
+        <td>
+          {player.score}
+          {#if player.minusScore > 0}
+            (-{player.minusScore})
+          {/if}
+        </td>
+        <td>{getTimeoutString(player.timeout)}</td>
+        <td>{player.connected}</td>
+      </tr>
+    {/each}
+  </tbody>
 </table>
 
 <style>
