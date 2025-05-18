@@ -99,12 +99,26 @@ impl ServerState {
         }
     }
 
-    pub fn start_game(&mut self, client_id: u32) {
+    pub async fn start_game(&mut self, client_id: u32) {
         let client = self.clients.get(&client_id).unwrap();
-        let room = self.rooms.get_mut(client.room_id.as_ref().unwrap()).unwrap();
+        let room_id = client.room_id.clone().unwrap();
+        let room = self.rooms.get_mut(&room_id).unwrap();
         room.start();
 
-        //sendUpdateGameAll(room);
-        //sendUpdatePlayers(room, false, true);
+        self.send_update_game_all(&room_id).await;
+        self.send_update_players(&room_id, false, true).await;
+    }
+
+    async fn send_update_game_all(&mut self, room_id: &str) {
+        let room = &self.rooms[room_id];
+        let data = room.get_update_game_packet(None);
+
+        let client_ids: Vec<_> = room.players.iter()
+            .filter_map(|player| player.client_id)
+            .collect();
+
+        for client_id in client_ids {
+            self.send_packet(client_id, data.clone()).await;
+        }
     }
 }
