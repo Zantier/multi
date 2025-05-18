@@ -192,7 +192,7 @@ async fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage,
         }
         ClientMessage::StartGame {} => {
             println!("[{client_id}] Game start requested");
-            // TODO: add logic
+            state.start_game(client_id);
         }
         ClientMessage::Heartbeat {} => {
             // Used to keep the connection alive

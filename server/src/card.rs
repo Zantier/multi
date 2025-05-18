@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Card {
     pub id: i32,
     pub color_id: i32,

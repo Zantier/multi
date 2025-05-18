@@ -1,7 +1,9 @@
 use futures_util::stream::SplitSink;
 use rand;
+use rand::seq::SliceRandom;
 use std::cmp::{max,min};
 use std::collections::HashSet;
+use std::iter;
 use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
@@ -203,5 +205,19 @@ impl Room {
         }
 
         packet
+    }
+
+    pub fn start(&mut self) {
+        self.started = true;
+        self.start_time = util::get_now() + 3000;
+        // Attributes: color (3), amount (3), shape (3), fill (3)
+        let mut card_ids: Vec<_> = (0..81).collect();
+        card_ids.shuffle(&mut rand::rng());
+        self.cards_left = card_ids
+            .iter()
+            .map(|&id| id_to_card(id))
+            .collect();
+        self.cards = iter::repeat(None).take(12).collect();
+        self.add_cards();
     }
 }

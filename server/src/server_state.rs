@@ -99,4 +99,12 @@ impl ServerState {
         }
     }
 
+    pub fn start_game(&mut self, client_id: u32) {
+        let client = self.clients.get(&client_id).unwrap();
+        let room = self.rooms.get_mut(client.room_id.as_ref().unwrap()).unwrap();
+        room.start();
+
+        //sendUpdateGameAll(room);
+        //sendUpdatePlayers(room, false, true);
+    }
 }
