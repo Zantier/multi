@@ -109,6 +109,15 @@ impl ServerState {
         self.send_update_players(&room_id, false, true).await;
     }
 
+    pub async fn pick_cards(&mut self, client_id: u32, card_indexes: &[usize]) {
+        let client = self.clients.get(&client_id).unwrap();
+        let room_id = client.room_id.clone().unwrap();
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        room.pick_cards(client_id, card_indexes);
+
+        self.send_update_game_all(&room_id).await;
+    }
+
     async fn send_update_game_all(&mut self, room_id: &str) {
         let room = &self.rooms[room_id];
         let data = room.get_update_game_packet(None);

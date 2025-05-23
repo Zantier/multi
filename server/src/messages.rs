@@ -60,7 +60,7 @@ pub struct PlayerUpdate {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PickCards {
-    pub player: i32,
-    pub cards: Vec<i32>,
+    pub player: u32,
+    pub cards: Vec<usize>,
     pub expire: i32,
 }

@@ -51,7 +51,12 @@ pub fn get_third_card(card1: &Card, card2: &Card) -> i32 {
 }
 
 
-pub fn check_match(card1: &Card, card2: &Card, card3: &Card) -> bool {
-    let check_id = get_third_card(card1, card2);
-    check_id == card3.id
+pub fn check_match(card1: &Option<Card>, card2: &Option<Card>, card3: &Option<Card>) -> bool {
+    match (card1, card2, card3) {
+        (Some(card1), Some(card2), Some(card3)) => {
+            let check_id = get_third_card(card1, card2);
+            check_id == card3.id
+        }
+        _ => false
+    }
 }

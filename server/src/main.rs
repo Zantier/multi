@@ -188,7 +188,7 @@ async fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage,
         }
         ClientMessage::PickCards { cards } => {
             println!("[{client_id}] Client picked cards: {cards:?}");
-            // TODO: add logic
+            state.pick_cards(client_id, &cards).await;
         }
         ClientMessage::StartGame {} => {
             println!("[{client_id}] Game start requested");

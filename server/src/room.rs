@@ -8,9 +8,12 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::card::{get_third_card, id_to_card, Card};
+use crate::card::{check_match, get_third_card, id_to_card, Card};
 use crate::messages::{PickCards, PlayerUpdate, ServerMessage};
-use crate::util;
+use crate::util::{self, get_now};
+
+const COLOR_EXPIRE_MS: i32 = 5000;
+const TIMEOUT_MS: i32 = 10000;
 
 #[derive(Debug)]
 pub struct Client {
@@ -219,5 +222,38 @@ impl Room {
             .collect();
         self.cards = iter::repeat(None).take(12).collect();
         self.add_cards();
+    }
+
+    pub fn pick_cards(&mut self, client_id: u32, card_indexes: &[usize]) {
+        let player_index = self.get_player_index(client_id).unwrap();
+
+        let is_match = check_match(&self.cards[card_indexes[0]], &self.cards[card_indexes[1]], &self.cards[card_indexes[2]]);
+        if is_match {
+            // Check that somebody else didn't already use any of the cards
+            for pick in self.correct.iter() {
+                for i in 0..3 {
+                    if pick.cards.contains(&card_indexes[i]) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        if is_match {
+            self.correct.push(PickCards {
+                player: player_index,
+                cards: card_indexes.to_vec(),
+                expire:  get_now() + COLOR_EXPIRE_MS,
+            });
+            self.players[player_index as usize].score += 1;
+        } else {
+            self.wrong.push(PickCards {
+                player: player_index,
+                cards: card_indexes.to_vec(),
+                expire:  get_now() + COLOR_EXPIRE_MS,
+            });
+            self.players[player_index as usize].minus_score += 1;
+            self.players[player_index as usize].timeout = get_now() + TIMEOUT_MS;
+        }
     }
 }
