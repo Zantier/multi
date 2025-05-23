@@ -78,6 +78,39 @@ impl ServerState {
         }
     }
 
+    pub async fn leave_view_room(&mut self, client_id: u32) {
+        let client = self.clients.get(&client_id).unwrap();
+
+        if let Some(room_id) = client.room_id.clone() {
+            self.leave_room(client_id);
+            self.view_room(client_id, &room_id).await;
+
+            let room = self.rooms.get_mut(&room_id).unwrap();
+            room.check_empty();
+            self.send_update_players(&room_id, true, true).await;
+        }
+    }
+
+    pub async fn disconnect(&mut self, client_id: u32) {
+        let client = self.clients.get(&client_id).unwrap();
+
+        if let Some(room_id) = client.room_id.clone() {
+            self.leave_room(client_id);
+
+            let room = self.rooms.get_mut(&room_id).unwrap();
+            room.check_empty();
+            self.send_update_players(&room_id, true, true).await;
+        }
+    }
+
+    pub fn leave_room(&mut self, client_id: u32) {
+        let client = self.clients.get_mut(&client_id).unwrap();
+        if let Some(room) = self.rooms.get_mut(client.room_id.as_ref().unwrap()) {
+            client.room_id = None;
+            room.remove_client(client.id);
+        }
+    }
+
     pub async fn send_update_players(&mut self, room_id: &str, send_to_players: bool, send_to_viewers: bool) {
         let room = &self.rooms[room_id];
         let packet = ServerMessage::UpdatePlayers {

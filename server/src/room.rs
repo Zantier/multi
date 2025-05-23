@@ -256,4 +256,39 @@ impl Room {
             self.players[player_index as usize].timeout = get_now() + TIMEOUT_MS;
         }
     }
+
+    pub fn remove_client(&mut self, client_id: u32) {
+        self.viewers.retain(|id| id != &client_id);
+
+        if self.started {
+            for player in self.players.iter_mut() {
+                if player.client_id == Some(client_id) {
+                    player.client_id = None;
+                }
+            }
+        } else {
+            let player_index = self.get_player_index(client_id);
+            if let Some(player_index) = player_index {
+                self.players.remove(player_index as usize);
+            }
+        }
+    }
+
+    pub fn check_empty(&mut self) {
+        // Queue the room to be deleted
+        let mut is_empty = true;
+        for player in self.players.iter() {
+            if player.client_id.is_some() {
+                is_empty = false;
+            }
+        }
+
+        if is_empty {
+            if self.game_over {
+                self.delete_time = Some(get_now() + 1000);
+            } else {
+                self.delete_time = Some(get_now() + 30 * 60 * 1000);
+            }
+        }
+    }
 }

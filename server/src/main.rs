@@ -165,6 +165,7 @@ async fn handle_connection(state: Arc<Mutex<ServerState>>, stream: TcpStream) {
     println!("Client disconnected");
     let mut client = {
         let mut state = state.lock().await;
+        state.disconnect(client_id).await;
         state.clients.remove(&client_id).unwrap()
     };
     _ = client.sender.close().await;
@@ -184,7 +185,7 @@ async fn handle_message(state: &Arc<Mutex<ServerState>>, message: ClientMessage,
         }
         ClientMessage::LeaveRoom {} => {
             println!("[{client_id}] Client left the room");
-            // TODO: add logic
+            state.leave_view_room(client_id).await;
         }
         ClientMessage::PickCards { cards } => {
             println!("[{client_id}] Client picked cards: {cards:?}");
